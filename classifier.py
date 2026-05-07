@@ -44,14 +44,14 @@ def _classify_hand(lm):
     index_tip = lm[8]
 
     all_up     = all(up)
-    all_down   = not any(up)
+    spider_pose = up[0] and up[1] and not up[2] and not up[3] and up[4]
     only_index = up[1] and not up[2] and not up[3] and not up[4]
     peace      = up[1] and up[2] and not up[3] and not up[4]
 
     if all_up:
         return 'JUMP'
 
-    if all_down:
+    if spider_pose:
         return 'ATTACK'
 
     if peace:
