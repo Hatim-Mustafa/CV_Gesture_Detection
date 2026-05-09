@@ -1,12 +1,12 @@
 import cv2
 from capture    import FrameCapture
 from classifier import GestureClassifier
-#from sender     import GestureSender
+from sender     import GestureSender
 
 def run():
     cap        = FrameCapture()
     classifier = GestureClassifier()
-    #sender     = GestureSender()
+    sender     = GestureSender()
 
     print("[gesture] running — press Q to quit")
 
@@ -20,7 +20,7 @@ def run():
 
         if gesture:
             print(f"[gesture] → {gesture}")
-            #sender.send(gesture)
+            sender.send(gesture)
 
         # debug overlay
         if frame is not None:
@@ -33,7 +33,7 @@ def run():
             break
 
     cap.release()
-    #sender.close()
+    sender.close()
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':
