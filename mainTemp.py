@@ -41,10 +41,9 @@ def run():
         if gesture_text in GESTURE_MAP:
             gesture_id = GESTURE_MAP[gesture_text]
 
-            # 4. Package the observation (Must match the 3 elements from your training env)
-            # [Human_Gesture, Boss_Health, Consecutive_Attacks]
-            # Since this is a live test without a real healthbar, we use dummy values (full health, 0 combo)
-            obs = np.array([gesture_id / 5.0, 1.0, 0.0], dtype=np.float32)
+            # 4. Package the observation (Must match your training input)
+            # [Human_Gesture, Dist_X, Dist_Y, Boss_Health]
+            obs = np.array([gesture_id / 5.0, 0, 0, 1.0], dtype=np.float32)
             
             # 5. Predict the move
             action_id, _ = model.predict(obs, deterministic=False)

@@ -27,17 +27,14 @@ class BossAIEnv(gym.Env):
         self.boss_health = 100
         self.last_action = 0
         self.consecutive_attacks = 0
-        
-        # Start with a random human gesture and store it so the AI knows what to react to
-        self.current_human_gesture = np.random.choice([0, 1, 2, 3, 4, 5], p=[0.3, 0.1, 0.1, 0.1, 0.3, 0.1])
-        self.last_human_gesture = self.current_human_gesture
+        self.last_human_gesture = 0
         
         # Initial observation
-        return np.array([self.current_human_gesture / 5.0, 1.0, 0.0], dtype=np.float32), {}
+        return np.array([0.0, 1.0, 0.0], dtype=np.float32), {}
     
     def step(self, action):
-        # AI reacts to current_human_gesture
-        human_gesture = self.current_human_gesture
+
+        human_gesture = np.random.choice([0, 1, 2, 3, 4, 5], p=[0.3, 0.1, 0.1, 0.1, 0.3, 0.1])
         # Track state across steps
         if not hasattr(self, 'boss_health'):
             self.boss_health = 100
@@ -112,24 +109,34 @@ class BossAIEnv(gym.Env):
                     reward -=25
         else:
             self.consecutive_attacks = 0
+
+        if human_gesture == 5:  # Human shielding
+            if action == 1:  # Boss attacking into shield = bad
+                reward -= 20
+            elif action == 2:  # Boss also shields = stalemate
+                reward += 5
+            else:  # Boss does something else = punish
+                reward -= 15
                 
         # HEALTH-BASED AGGRESSION: Low health = more desperate
         if self.boss_health < 25:  # Desperation mode
             if action == 1:  # Attack less
                 reward -= 25
-            elif action in [2, 5]:  # Shield or run away
+            elif action == 2 or action == 5:  # Shield
                 reward += 10
         elif self.boss_health > 75:  # Winning = be aggressive
             if action == 1:
-                reward += 5  # Reduced from 15 so it doesn't just spam attack
+                reward += 15
             elif action == 5:  # Don't run away
                 reward -= 10
 
         # DISTANCE MANAGEMENT: Close distance to attack
         if human_gesture == 4:  # Human attacking
-            if action == 5:  # Back away (5 is BACKWARD)
+            if action == 4:  # Back away (create space)
                 reward += 18
         elif human_gesture == 0:  # Human idle = rush in
+            if action == 1:  # Dash attack
+                reward += 22
             if action == 4:  # forward attack
                 reward += 12
 
@@ -142,13 +149,9 @@ class BossAIEnv(gym.Env):
             self.boss_health -= 1
 
         self.last_action = action
-        self.last_human_gesture = self.current_human_gesture
-        
-        # Determine human gesture for the NEXT step
-        self.current_human_gesture = np.random.choice([0, 1, 2, 3, 4, 5], p=[0.3, 0.1, 0.1, 0.1, 0.3, 0.1])
-        
+        self.last_human_gesture = human_gesture
         state = np.array([
-            self.current_human_gesture / 5.0,        # Scaled 0.0 to 1.0
+            human_gesture / 5.0,        # Scaled 0.0 to 1.0
             self.boss_health / 100.0,   # Scaled 0.0 to 1.0
             self.consecutive_attacks / 5.0  # Scaled 0.0 to 1.0
         ], dtype=np.float32)
