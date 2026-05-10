@@ -3,6 +3,7 @@ import numpy as np
 from stable_baselines3 import PPO
 from capture    import FrameCapture
 from classifier import GestureClassifier
+from sender     import GestureSender
 
 # Define mappings (Must match your ai_agent.py environment)
 GESTURE_MAP = {
@@ -26,6 +27,7 @@ def run():
 
     cap        = FrameCapture()
     classifier = GestureClassifier()
+    sender     = GestureSender()
 
     print("[gesture] running — press Q to quit")
 
@@ -53,6 +55,9 @@ def run():
             
             print(f"[Live] Human: {gesture_text} | AI Boss: {boss_move}")
 
+            # Send the data to the C++ game over UDP
+            sender.send(gesture_text)
+
         # 6. Debug overlay
         if frame is not None:
             # Show what YOU are doing
@@ -70,6 +75,7 @@ def run():
 
     cap.release()
     cv2.destroyAllWindows()
+    sender.close()
 
 if __name__ == '__main__':
     run()
