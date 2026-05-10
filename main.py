@@ -2,16 +2,22 @@ import cv2
 from capture    import FrameCapture
 from classifier import GestureClassifier
 from sender     import GestureSender
+from state_receiver import StateReceiver
 
 def run():
     cap        = FrameCapture()
     classifier = GestureClassifier()
     sender     = GestureSender()
+    state_rx   = StateReceiver()
 
     print("[gesture] running — press Q to quit")
 
     while True:
         landmarks, frame = cap.get_landmarks()
+
+        state_rx.update()
+        state = state_rx.get()
+        print(state)
 
         if frame is None:
             break
