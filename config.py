@@ -28,6 +28,7 @@ COOLDOWN_SECONDS = 0.25
 # PvP split-frame: 'full' | 'left' | 'right'
 PLAYER_ZONE      = 'full'
 PLAYER_ID        = 1
+BOSS_ID          = 0
 
 # Socket
 UDP_HOST         = '127.0.0.1'

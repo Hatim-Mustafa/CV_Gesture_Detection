@@ -3,7 +3,10 @@ import numpy as np
 from stable_baselines3 import PPO
 from capture    import FrameCapture
 from classifier import GestureClassifier
+from config import BOSS_ID, PLAYER_ID
 from sender     import GestureSender
+from state_receiver import StateReceiver
+from ai_agent   import inRange
 
 # Define mappings (Must match your ai_agent.py environment)
 GESTURE_MAP = {
@@ -14,7 +17,8 @@ GESTURE_MAP = {
     'ATTACK': 4,
     'SHIELD': 5,
 }
-ACTION_MAP = {0: "IDLE", 1: "ATTACK", 2: "SHIELD", 3: "JUMP", 4: "BACKWARD"}
+# ACTION_MAP must exactly match your ai_agent.py environment
+ACTION_MAP = {0: "IDLE", 1: "ATTACK", 2: "SHIELD", 3: "JUMP", 4: "FORWARD", 5: "BACKWARD"}
 
 def run():
     # 1. Load the Brain
@@ -28,35 +32,54 @@ def run():
     cap        = FrameCapture()
     classifier = GestureClassifier()
     sender     = GestureSender()
+    state_rx   = StateReceiver()
+
 
     print("[gesture] running — press Q to quit")
 
     while True:
         landmarks, frame = cap.get_landmarks()
-        if frame is None: break
 
+        state_rx.update()
+        state = state_rx.get()
+        # print(state)  # Removed spammy state printing
+        
+        if frame is None: break
         # 2. Get the gesture text from your classifier
         gesture_text = classifier.update(landmarks)
 
-        # 3. AI Logic Loop
+        # Fallback to NONE so the AI still knows what you are doing
+        current_human_gesture = gesture_text if gesture_text else 'NONE'
+        gesture_id = GESTURE_MAP[current_human_gesture]
+
+        # 3. AI Logic Loop (Runs continuously, not just when you move)
         boss_move = "WAITING"
-        if gesture_text in GESTURE_MAP:
-            gesture_id = GESTURE_MAP[gesture_text]
 
-            # 4. Package the observation (Must match the 3 elements from your training env)
-            # [Human_Gesture, Boss_Health, Consecutive_Attacks]
-            # Since this is a live test without a real healthbar, we use dummy values (full health, 0 combo)
-            obs = np.array([gesture_id / 5.0, 1.0, 0.0], dtype=np.float32)
-            
-            # 5. Predict the move
-            action_id, _ = model.predict(obs, deterministic=False)
-            action_id = int(action_id)  # Convert the array to a single integer
-            boss_move = ACTION_MAP.get(action_id, "IDLE")
-            
-            print(f"[Live] Human: {gesture_text} | AI Boss: {boss_move}")
+        # 4. Package the observation
+        # Extract real state info from the C++ game
+        px, py = state['player']['x'], state['player']['y']
+        bx, by = state['enemy']['x'], state['enemy']['y']
+        boss_health = state['enemy']['hp']
+        
+        # Use the exact same threshold logic as training
+        is_in_range, _ = inRange((px, py), (bx, by), threshold=200.0)
+        human_is_left = px < bx
 
-            # Send the data to the C++ game over UDP
-            sender.send(gesture_text)
+        # [Human_Gesture, Boss_Health, Consecutive_Attacks, inRange boolean, is_human_on_left boolean]
+        obs = np.array([gesture_id / 5.0, boss_health / 100.0, 0.0, float(is_in_range), float(human_is_left)], dtype=np.float32)
+        
+        # 5. Predict the move
+        action_id, _ = model.predict(obs, deterministic=False)
+        action_id = int(action_id)  # Convert the array to a single integer
+        boss_move = ACTION_MAP.get(action_id, "IDLE")
+        
+        # Send the continuous boss state to the C++ game over UDP
+        sender.send(gesture=boss_move, player_id=BOSS_ID)
+
+        # Only send the player gesture if there's an actual, new debounced gesture
+        if gesture_text:
+            print(f"[Live] Human: {gesture_text} | AI Boss: {boss_move} | Data: {state}")
+            sender.send(gesture=gesture_text,player_id=PLAYER_ID)
 
         # 6. Debug overlay
         if frame is not None:
