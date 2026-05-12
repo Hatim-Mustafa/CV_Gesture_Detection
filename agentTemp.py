@@ -45,9 +45,9 @@ class BossAIEnv(gym.Env):
         self.current_human_gesture = np.random.choice([0, 1, 2, 3, 4, 5], p=[0.3, 0.1, 0.1, 0.1, 0.3, 0.1])
         self.last_human_gesture = self.current_human_gesture
         
-        # Generate random coordinates for this frame (1400x1000 to match new screen bounds)
-        px, py = np.random.uniform(0, 1400), np.random.uniform(0, 1000)
-        bx, by = np.random.uniform(0, 1400), np.random.uniform(0, 1000)
+        # Generate random coordinates for this frame (1400x350 to match new screen bounds)
+        px, py = np.random.uniform(0, 1400), np.random.uniform(0, 350)
+        bx, by = np.random.uniform(0, 1400), np.random.uniform(0, 350)
         self.is_in_range, distance = inRange((px, py), (bx, by), threshold=200.0)
         self.human_is_left = is_human_on_left((px, py), (bx, by))
 
@@ -68,9 +68,9 @@ class BossAIEnv(gym.Env):
             self.consecutive_attacks = 0
             self.last_human_gesture = 0
 
-        # Generate fresh random coordinates (1400x1000)
-        px, py = np.random.uniform(0, 1400), np.random.uniform(0, 1000)
-        bx, by = np.random.uniform(0, 1400), np.random.uniform(0, 1000)
+        # Generate fresh random coordinates (1400x350)
+        px, py = np.random.uniform(0, 1400), np.random.uniform(0, 350)
+        bx, by = np.random.uniform(0, 1400), np.random.uniform(0, 350)
         self.is_in_range, distance = inRange((px, py), (bx, by), threshold=200.0)
         self.human_is_left = is_human_on_left((px, py), (bx, by))
 
@@ -151,113 +151,157 @@ class BossAIEnv(gym.Env):
                     elif action == 5:  # Boss moves left to pressure shield = good
                         reward += 10
 
-                
-        else:
-            # If human is on the right
-            if human_gesture == 0 and not self.is_in_range:  # Human idle and far away -> Move closer
-                if action == 4:  # FORWARD (Move Right)
-                    reward += 30
-                elif action == 5:  # BACKWARD (Move Left) is bad
-                    reward -= 20
-            elif human_gesture == 4 and self.is_in_range: # Human attack and in range -> Run away or shield
-                if action == 5: # BACKWARD (Move Left to dodge)
-                    reward += 20
-                elif action == 4: # FORWARD (Move Right into attack)
-                    reward -= 30
+                if self.boss_health < 25:  # Desperation mode
+                    if action == 1:  # Attack less
+                        reward -= 25
+                    elif action in [2, 4]:  # Shield or run away
+                        reward += 15
+                elif self.boss_health > 75:  # Winning = be aggressive
+                    if action == 1:
+                        reward += 10  
+                    else:  # Don't run away
+                        reward -= 5
 
-            if human_gesture == 0:  # Human idle
-                if action == 1:  # Boss attacks idle human = good
-                    reward += 20
-                elif action == 4:  # Boss moves forward to pressure
-                    reward += 10
-                else:
-                    reward -= 10  # Missed opportunity
-
-            if human_gesture == 4:  # Human attacking
-                if action == 2:  # Boss shields successfully
-                    reward += 25
-                elif action == 1 or action == 4:  # Boss tries to attack into human attack = bad
+            else:
+                if action in [0,1,2,3]:  # Boss attacks from far away = bad
                     reward -= 10
-                elif action == 5:  # Boss back away from attack = smart
-                    reward += 15
-                else:
-                    reward -= 15  # Didn't react properly
-
-            if human_gesture == 5:  # Human shielding
-                if action == 1:  # Boss attacking into shield = bad
+                elif action == 5:  # Boss moves backward to close distance = good
+                    reward += 20
+                elif action == 4:  # Boss moves forward to stay far = bad
                     reward -= 20
-                elif action == 2:  # Boss also shields = stalemate
-                    reward += 5
-                elif action == 4:  # Boss moves forward to pressure shield = good
-                    reward += 10
-                else:  # Boss does something else = punish
-                    reward -= 5
 
-            if human_gesture == 3:  # Human jumps
-                if getattr(self, 'last_human_gesture', 0) == 1:  # Human moved forward then jumped
-                    if action in [2, 5]:  # Boss shields or moves backward
-                        reward += 20
-                    else:
-                        reward -= 15
-                else:
-                    if action == 1:  # Boss attacks jump = good
-                        reward += 20
-                    elif action == 2:  # Boss shields jump = bad (wasted)
+                if self.last_action== 5 and action == 1:  # Closing distance then attacking
+                    reward += 12  # Reward smart aggression after closing gap
+
+                if self.last_action== 5 and action == 3: # Closing distance then jumping to meet them
+                    reward += 15  
+                if self.last_action== 3 and action == 5: # Jumping then closing distance
+                    reward += 15
+
+                if self.boss_health < 25:  # Desperation mode
+                    if action == 4:  # Run away more
+                        reward += 10
+                    elif action == 5:  # Attack less
                         reward -= 10
-                    elif action == 4:  # Boss moves forward to pressure jump = risky but good
+                elif self.boss_health > 75:  # Winning = be aggressive
+                    if action == 5:
+                        reward += 15  
+                    else :
+                        reward -= 10
+
+        else: # IF HUMAN ON RIGHT
+            if self.is_in_range:
+                if human_gesture == 0: # Human idle and in range -> Pressure them
+                    if action == 1:  # attack if in range
+                        reward += 30
+                    else:
+                        reward -= 20
+                
+                if human_gesture == 1:
+                    if getattr(self, 'last_human_gesture', 0) == 3:
+                        if action in [2, 5]:  # Boss shields or moves forward from jump-then-forward
+                            reward += 20
+
+                    if action == 1:  # Boss attacks forward-moving human = good
+                        reward += 15
+                    elif action == 5:  # Boss moves forward to dodge forward movement = good
+                        reward += 10
+                    elif action == 4:  # Boss moves backward into forward movement = bad
+                        reward -= 20
+                    elif action == 2 or action == 3:  # potentially shielding forward movement = risky, could be good or bad
                         reward += 5
                     else:
-                        reward -= 5  # Didn't react to jump
+                        reward -= 5  # Missed opportunity
 
-        
+                if human_gesture == 2:  # Human moving backward
+                    if action == 1:  # Boss attacks retreating human = good
+                        reward += 20
+                    elif action == 4:  # Boss moves backward to close gap = good
+                        reward += 10
+                    elif action == 5:  # Boss moves forward into backward movement = bad
+                        reward -= 5
+                    elif action == 0 or action == 3 or action==2:  # potentially shielding backward movement = risky, could be good or bad
+                        reward =reward  # Neutral
 
-            # COUNTER-ATTACK WINDOW: Reward attacking right after defending
-            if self.last_action == 2 and action == 1:  # Shield → Attack
-                reward += 15  # Punish cooldown, force aggression
-
-            # COMBO PRESSURE: Human attacking repeatedly
-            if human_gesture == 4:
-                self.consecutive_attacks += 1
-                if self.consecutive_attacks > 2:  # 3+ attacks = get aggressive
-                    if action == 1:  # Boss counter-attacks
-                        reward += 30
-                    elif action == 2:
-                        reward -= 10  # Don't just shield forever
-                else:
-                    if action in [2,5]:  # Shield or back away
-                        reward +=20
+                if human_gesture ==3:  # Human jumps
+                    if action == 5 or action == 4:  # Boss attacks jump = good
+                        reward += 10
+                    elif action == 2:  # Boss shields jump = bad (wasted)
+                        reward += 5
+                    elif action == 3:  # Boss jumps to meet jump = risky but good
+                        reward += 2
+                    elif action == 1: # Boss does something else = punish
+                        reward -= 5
+                
+                if human_gesture==4: # Human attack and in range -> Run away or shield
+                    self.consecutive_attacks += 1
+                    if self.consecutive_attacks <= 2:
+                        if action == 5 or action == 2 or action == 3: # FORWARD (Move Right to dodge) or BACKWARD (Move Left to dodge)
+                            reward += 20
+                        elif action == 4: # BACKWARD (Move Left into attack)
+                            reward -= 10
+                        else:
+                            reward -= 30  # Missed opportunity to react to attack
                     else:
-                        reward -=25
-            else:
-                self.consecutive_attacks = 0
-                    
-        # HEALTH-BASED AGGRESSION: Low health = more desperate
-        if self.boss_health < 25:  # Desperation mode
-            if action == 1:  # Attack less
-                reward -= 25
-            elif action in [2, 5]:  # Shield or run away
-                reward += 10
-        elif self.boss_health > 75:  # Winning = be aggressive
-            if action == 1:
-                reward += 5  # Reduced from 15 so it doesn't just spam attack
-            elif action == 5:  # Don't run away
-                reward -= 10
+                        if action == 1:  # Boss counter-attacks
+                            reward += 30
+                        elif action == 2:
+                            reward -= 10  # Don't just shield forever
+                        elif action in [3,5]:  # Boss moves forward to pressure attack = risky but good
+                            reward += 25
+                        else:
+                            reward -= 25  # Didn't react properly to repeated attacks
+                
+                if human_gesture == 5:  # Human shielding
+                    if self.last_action == 3 and action==4:  # Jumping followed by moving backward(left)
+                        reward += 30
+                    elif action == 1:  # Boss attacking into shield = bad
+                        reward -= 20
+                    elif action == 3:
+                        reward -= 10
+                    elif action in [2,0]:  # Boss shields or stays still = stalemate
+                        reward += 1
+                    elif action == 4:  # Boss moves left to pressure shield = good
+                        reward += 10
+                
+                if self.boss_health < 25:  # Desperation mode
+                    if action == 1:  # Attack less
+                        reward -= 25
+                    elif action in [2, 5]:  # Shield or run away
+                        reward += 15
+                elif self.boss_health > 75:  # Winning = be aggressive
+                    if action == 1:
+                        reward += 10  
+                    else:  # Don't run away
+                        reward -= 5
 
-        # DISTANCE MANAGEMENT: Create simple reward bounds based on being in range
-        if human_gesture == 4:  # Human attacking
-            if self.is_in_range:
-                # If we are in range and they act, MUST shield (running away handled above)
-                if action == 2:
-                    reward += 30
-                elif action == 1:
-                    reward -= 40 # Punish attacking head on into an attack
             else:
-                # If out of range during their attack, holding idle or taunting is best
-                if action == 0:
-                    reward += 10
-        elif human_gesture == 0:  # Human idle
-            if self.is_in_range and action == 1: # Attack if in range
-                reward += 20
+                if action in [0,1,2,3]:  # Boss attacks from far away = bad
+                    reward -= 10
+                elif action == 4:  # Boss moves backward to close distance = good
+                    reward += 20
+                elif action == 5:  # Boss moves forward to stay far = bad
+                    reward -= 20
+
+                if self.last_action== 4 and action == 1:  # Closing distance then attacking
+                    reward += 12  # Reward smart aggression after closing gap
+
+                if self.last_action== 4 and action == 3: # Closing distance then jumping to meet them
+                    reward += 15  
+                if self.last_action== 3 and action == 4: # Jumping then closing distance
+                    reward += 15
+
+                if self.boss_health < 25:  # Desperation mode
+                    if action == 5:  # Run away more
+                        reward += 10
+                    elif action == 4:  # Attack less
+                        reward -= 10
+                elif self.boss_health > 75:  # Winning = be aggressive
+                    if action == 4:
+                        reward += 15  
+                    else :
+                        reward -= 10
+    
 
         self.last_action = action
         self.last_human_gesture = self.current_human_gesture
@@ -275,10 +319,11 @@ class BossAIEnv(gym.Env):
         done = self.current_step >= 200  # End episode safely to naturally reset
         return state, reward, done, False, {}
 
-# 2. Train the AI
-env = BossAIEnv()
-model = PPO("MlpPolicy", env, verbose=1)
-model.learn(total_timesteps=50000)
+if __name__ == "__main__":
+    # 2. Train the AI
+    env = BossAIEnv()
+    model = PPO("MlpPolicy", env, verbose=1)
+    model.learn(total_timesteps=50000)
 
-# 3. Save the "Brain" to use in your game
-model.save("boss_reaction_model")
+    # 3. Save the "Brain" to use in your game
+    model.save("boss_reaction_model")

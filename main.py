@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+import time
+import random
 from stable_baselines3 import PPO
 from capture    import FrameCapture
 from classifier import GestureClassifier
@@ -36,6 +38,7 @@ def run():
 
 
     print("[gesture] running — press Q to quit")
+    last_print_time = time.time()
 
     while True:
         landmarks, frame = cap.get_landmarks()
@@ -76,9 +79,14 @@ def run():
         # Send the continuous boss state to the C++ game over UDP
         sender.send(gesture=boss_move, player_id=BOSS_ID)
 
+        current_time = time.time()
+        # Print status if 0.5 seconds have passed OR if the human did a brand new gesture
+        if gesture_text or (current_time - last_print_time >= 0.5):
+            print(f"[Live] Human: {current_human_gesture} | AI Boss: {boss_move} | Data: {state}")
+            last_print_time = current_time
+
         # Only send the player gesture if there's an actual, new debounced gesture
         if gesture_text:
-            print(f"[Live] Human: {gesture_text} | AI Boss: {boss_move} | Data: {state}")
             sender.send(gesture=gesture_text,player_id=PLAYER_ID)
 
         # 6. Debug overlay

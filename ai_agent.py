@@ -42,14 +42,14 @@ class BossAIEnv(gym.Env):
         self.current_step = 0
         
         # Start with a random human gesture and store it so the AI knows what to react to
-        self.current_human_gesture = np.random.choice([0, 1, 2, 3, 4, 5], p=[0.3, 0.1, 0.1, 0.1, 0.3, 0.1])
+        self.current_human_gesture = np.random.choice([0, 1, 2, 3, 4, 5], p=[0.3, 0.2, 0.1, 0.1, 0.2, 0.1])
         self.last_human_gesture = self.current_human_gesture
         
-        # Generate random coordinates for this frame (1400x350 to match new screen bounds)
-        px, py = np.random.uniform(0, 1400), np.random.uniform(0, 350)
-        bx, by = np.random.uniform(0, 1400), np.random.uniform(0, 350)
-        self.is_in_range, distance = inRange((px, py), (bx, by), threshold=200.0)
-        self.human_is_left = is_human_on_left((px, py), (bx, by))
+        # Generate random starting coordinates (persist across steps to avoid noisy left/right flips)
+        self.px, self.py = np.random.uniform(0, 1400), np.random.uniform(0, 350)
+        self.bx, self.by = np.random.uniform(0, 1400), np.random.uniform(0, 350)
+        self.is_in_range, distance = inRange((self.px, self.py), (self.bx, self.by), threshold=200.0)
+        self.human_is_left = is_human_on_left((self.px, self.py), (self.bx, self.by))
 
         # Initial observation
         return np.array([self.current_human_gesture / 5.0, self.boss_health / 100.0, 0.0, float(self.is_in_range), float(self.human_is_left)], dtype=np.float32), {}
@@ -68,11 +68,22 @@ class BossAIEnv(gym.Env):
             self.consecutive_attacks = 0
             self.last_human_gesture = 0
 
-        # Generate fresh random coordinates (1400x350)
-        px, py = np.random.uniform(0, 1400), np.random.uniform(0, 350)
-        bx, by = np.random.uniform(0, 1400), np.random.uniform(0, 350)
-        self.is_in_range, distance = inRange((px, py), (bx, by), threshold=200.0)
-        self.human_is_left = is_human_on_left((px, py), (bx, by))
+        # Update persistent coordinates instead of re-randomizing each step.
+        # Simulate simple human movement based on the current human gesture.
+        # small step to simulate motion
+        move_step = 30.0
+        # human_gesture is the gesture observed for this step (0..5)
+        if human_gesture == 1:  # FORWARD
+            self.px += move_step
+        elif human_gesture == 2:  # BACK
+            self.px -= move_step
+        elif human_gesture == 3:  # JUMP -- no horizontal movement
+            pass
+        # clamp player x within screen
+        self.px = float(np.clip(self.px, 0.0, 1400.0))
+        # Boss position remains static for the environment (AI decides actions relative to boss)
+        self.is_in_range, distance = inRange((self.px, self.py), (self.bx, self.by), threshold=200.0)
+        self.human_is_left = is_human_on_left((self.px, self.py), (self.bx, self.by))
 
         reward = 0
 
@@ -80,9 +91,9 @@ class BossAIEnv(gym.Env):
             if self.is_in_range:
                 if human_gesture == 0: # Human idle and in range -> Pressure them
                     if action == 1:  # attack if in range
-                        reward += 30
+                        reward += 15
                     else:
-                        reward -= 20
+                        reward -= 5
                 
                 if human_gesture == 1:
                     if getattr(self, 'last_human_gesture', 0) == 3:
@@ -163,20 +174,22 @@ class BossAIEnv(gym.Env):
                         reward -= 5
 
             else:
-                if action in [0,1,2,3]:  # Boss attacks from far away = bad
-                    reward -= 10
-                elif action == 5:  # Boss moves backward to close distance = good
-                    reward += 20
-                elif action == 4:  # Boss moves forward to stay far = bad
-                    reward -= 20
+                # If human is idle and out of range, prefer staying idle
+                if human_gesture == 0:
+                    if action == 5:  # Boss moves backward to close distance = good
+                        reward += 12
+                    else:
+                        reward -= 8
+                else:
+                    if action in [0,1,2,3]:  # Boss attacks from far away = bad
+                        reward -= 10
+                    elif action == 5:  # Boss moves backward to close distance = good
+                        reward += 20  # Drastically reduced from 20 to stop spamming
+                    elif action == 4:  # Boss moves forward to stay far = bad
+                        reward -= 20
 
                 if self.last_action== 5 and action == 1:  # Closing distance then attacking
                     reward += 12  # Reward smart aggression after closing gap
-
-                if self.last_action== 5 and action == 3: # Closing distance then jumping to meet them
-                    reward += 15  
-                if self.last_action== 3 and action == 5: # Jumping then closing distance
-                    reward += 15
 
                 if self.boss_health < 25:  # Desperation mode
                     if action == 4:  # Run away more
@@ -193,9 +206,9 @@ class BossAIEnv(gym.Env):
             if self.is_in_range:
                 if human_gesture == 0: # Human idle and in range -> Pressure them
                     if action == 1:  # attack if in range
-                        reward += 30
+                        reward += 15
                     else:
-                        reward -= 20
+                        reward -= 5
                 
                 if human_gesture == 1:
                     if getattr(self, 'last_human_gesture', 0) == 3:
@@ -276,20 +289,22 @@ class BossAIEnv(gym.Env):
                         reward -= 5
 
             else:
-                if action in [0,1,2,3]:  # Boss attacks from far away = bad
-                    reward -= 10
-                elif action == 4:  # Boss moves backward to close distance = good
-                    reward += 20
-                elif action == 5:  # Boss moves forward to stay far = bad
-                    reward -= 20
+                # If human is idle and out of range, prefer staying idle
+                if human_gesture == 0:
+                    if action == 4:  # stay idle
+                        reward += 12
+                    else:
+                        reward -= 8
+                else:
+                    if action in [0,1,2,3]:  # Boss attacks from far away = bad
+                        reward -= 10
+                    elif action == 4:  # Boss moves backward to close distance = good
+                        reward += 20 # Drastically reduced from 20 to stop spamming
+                    elif action == 5:  # Boss moves forward to stay far = bad
+                        reward -= 20
 
                 if self.last_action== 4 and action == 1:  # Closing distance then attacking
                     reward += 12  # Reward smart aggression after closing gap
-
-                if self.last_action== 4 and action == 3: # Closing distance then jumping to meet them
-                    reward += 15  
-                if self.last_action== 3 and action == 4: # Jumping then closing distance
-                    reward += 15
 
                 if self.boss_health < 25:  # Desperation mode
                     if action == 5:  # Run away more
@@ -301,7 +316,10 @@ class BossAIEnv(gym.Env):
                         reward += 15  
                     else :
                         reward -= 10
-    
+        # small penalty for repeating the same action (avoid forcing rapid alternation)
+        if action == self.last_action:
+            reward -= 1
+
 
         self.last_action = action
         self.last_human_gesture = self.current_human_gesture
@@ -323,7 +341,7 @@ if __name__ == "__main__":
     # 2. Train the AI
     env = BossAIEnv()
     model = PPO("MlpPolicy", env, verbose=1)
-    model.learn(total_timesteps=50000)
+    model.learn(total_timesteps=500000)
 
     # 3. Save the "Brain" to use in your game
     model.save("boss_reaction_model")
